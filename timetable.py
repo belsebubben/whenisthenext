@@ -1,4 +1,9 @@
-#!/home/carl/.pyvenv/bin/python3
+#!/usr/bin/python3
+
+DESCRIPTION = '''
+Simple little bus stop timetable for stockholms lokaltrafik, could easily be used for other transport types.
+Use with settings file and get you own API keys from sl.se trafiklab. Also simple lookup of stops with '-l'
+'''
 
 from urllib import parse, request
 import sys
@@ -8,6 +13,8 @@ import json
 import os
 import pwd
 import shelve
+import argparse
+
 
 UA="Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:40.0) Gecko/20100101 Firefox/40.0"
 BASEDIR = '.whenisnext'
@@ -20,6 +27,7 @@ SETTINGSPATH = os.path.join(os.path.expanduser('~' + pwd.getpwuid(os.getuid()).p
 TRANSPORTMODES = ('Buses','Metros', 'Trains', 'Trams', 'Ships')
 REALTIMEVERSION = 'V4'
 REALTIMEURL = 'http://api.sl.se/api2/realtimedepartures{}.json?'.format(REALTIMEVERSION)
+PLATSUPPSLAGURL = 'https://api.sl.se/api2/typeahead.json?'
 
 exampleconfig = '''
 TRANSPORTMODE = 'Buses'
@@ -27,6 +35,7 @@ LINENO = '2'
 DESTINATION = 'Sofia'
 CACHETIME = 330
 REALTIMEKEY = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+STATIONID = 1073
 '''
 
 # read settings
@@ -35,6 +44,13 @@ try:
 except FileNotFoundError as err:
     print('\nMissing configuration create "{}" like so:\n{}\n'.format(SETTINGSPATH, exampleconfig))
     sys.exit(1)
+
+def parse_args():
+    parser = argparse.ArgumentParser(epilog=DESCRIPTION, formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('-l', '--lookup', dest='lookup', help='lookup stop',
+            default=False)
+    args = parser.parse_args()
+    return args, parser
 
 def createHttpRequest(url, cookiejar=None):
     urlparts = parse.urlparse(url)
@@ -97,7 +113,7 @@ def get_data():
     if lastval is not None:
         times_printer(lastval)
         sys.exit(0)
-    params = {'key': REALTIMEKEY, 'siteid': '1074', 'timewindow': '40'}
+    params = {'key': REALTIMEKEY, 'siteid': STATIONID, 'timewindow': '40'}
     url = REALTIMEURL + parse.urlencode(params)
     result = createHttpRequest(url)
     jsondata = json.loads(result[0])
@@ -113,9 +129,22 @@ def get_data():
         cached_data(get=False, value=times) # set new cache
         times_printer(times)
 
-def main():
-    get_data()
+def lookup(args):
+    params = {'searchstring': args.lookup, 'key': PLATSUPPSLAG}
+    url = PLATSUPPSLAGURL + parse.urlencode(params)
+    result = createHttpRequest(url)
+    jsondata = json.loads(result[0])
+    for stop in jsondata['ResponseData']:
+        print('Name: ', stop['Name'])
+        print('Id: ', stop['SiteId'])
+        print()
 
+def main():
+    args, parser = parse_args()
+    if args.lookup:
+        lookup(args)
+        sys.exit(0)
+    get_data()
 
 if __name__ in '__main__':
     main()
