@@ -32,6 +32,8 @@ REALTIMEVERSION = "V4"
 REALTIMEURL = "http://api.sl.se/api2/realtimedepartures{}.json?".format(REALTIMEVERSION)
 PLATSUPPSLAGURL = "https://api.sl.se/api2/typeahead.json?"
 
+debug = False
+
 exampleconfig = """
 TRANSPORTMODE = 'Buses'
 LINENO = '2'
@@ -54,13 +56,20 @@ except FileNotFoundError as err:
 
 
 def parse_args():
+    global debug
     parser = argparse.ArgumentParser(
         epilog=DESCRIPTION, formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument(
+        "-d", "--debug", dest="debug", action="store_true", help="Enable debug", default=False
     )
     parser.add_argument(
         "-l", "--lookup", dest="lookup", help="lookup stop", default=False
     )
     args = parser.parse_args()
+    if args.debug:
+        debug = args.debug
+        print("Debugging enabled")
     return args, parser
 
 
@@ -96,6 +105,7 @@ def cached_data(get=True, value=None):
     now = datetime.datetime.now()
 
     if not get:
+        if debug: print("Setting cached data: ", value)
         d[lastkey] = (now, value)
         d.close()
         return None
@@ -132,35 +142,40 @@ def times_printer(times):
 
 def get_data():
     lastval = cached_data(get=True, value=None)
-    if lastval is not None:
+    if debug: print("Last (cached) value: ", lastval)
+    if lastval == None or lastval == "" or lastval == []: 
+        params = {"key": REALTIMEKEY, "siteid": STATIONID, "timewindow": "40"}
+        url = REALTIMEURL + parse.urlencode(params)
+        if debug: print("Getting new data from: ", "\n", "url: ", url, "\n", "params:", params)
+        result, charset = createHttpRequest(url)
+        data = result.decode(charset or "UTF-8")
+        if debug: print("Data retreived:\n", data)
+        jsondata = json.loads(data)
+        resstring = ""
+
+        if TRANSPORTMODE in jsondata["ResponseData"]:
+            transports = [
+                tr
+                for tr in jsondata["ResponseData"][TRANSPORTMODE]
+                if tr["Destination"] == DESTINATION and tr["LineNumber"] == LINENO
+            ]
+
+            times = [
+                datetime.datetime.strptime(t["ExpectedDateTime"], "%Y-%m-%dT%H:%M:%S")
+                for t in transports
+            ]
+
+            cached_data(get=False, value=times)  # set new cache
+            times_printer(times)
+    else:
         times_printer(lastval)
         sys.exit(0)
-    params = {"key": REALTIMEKEY, "siteid": STATIONID, "timewindow": "40"}
-    url = REALTIMEURL + parse.urlencode(params)
-    result, charset = createHttpRequest(url)
-    data = result.decode(charset or "UTF-8")
-    jsondata = json.loads(data)
-    resstring = ""
-
-    if TRANSPORTMODE in jsondata["ResponseData"]:
-        transports = [
-            tr
-            for tr in jsondata["ResponseData"][TRANSPORTMODE]
-            if tr["Destination"] == DESTINATION and tr["LineNumber"] == LINENO
-        ]
-
-        times = [
-            datetime.datetime.strptime(t["ExpectedDateTime"], "%Y-%m-%dT%H:%M:%S")
-            for t in transports
-        ]
-
-        cached_data(get=False, value=times)  # set new cache
-        times_printer(times)
 
 
 def lookup(args):
     params = {"searchstring": args.lookup, "key": PLATSUPPSLAG}
     url = PLATSUPPSLAGURL + parse.urlencode(params)
+    if args.debug: print("Params: ", params)
     result = createHttpRequest(url)
     jsondata = json.loads(result[0])
     for stop in jsondata["ResponseData"]:
