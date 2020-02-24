@@ -137,8 +137,9 @@ def get_data():
         sys.exit(0)
     params = {"key": REALTIMEKEY, "siteid": STATIONID, "timewindow": "40"}
     url = REALTIMEURL + parse.urlencode(params)
-    result = createHttpRequest(url)
-    jsondata = json.loads(result[0])
+    result, charset = createHttpRequest(url)
+    data = result.decode(charset or "UTF-8")
+    jsondata = json.loads(data)
     resstring = ""
 
     if TRANSPORTMODE in jsondata["ResponseData"]:
